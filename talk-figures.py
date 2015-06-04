@@ -349,7 +349,102 @@ def gmm1():
         means = newmeans
         covs = newcovs
         
+def fgbg_example():
+    import utils
+    # Here's our foreground-background synthetic dataset:
+    xlo,xhi = 0,10
+    ylo,yhi = 0,8
+    # Here are the real objects in our sample:
+    amp_true = 3
+    offset_true = 4
+    Nf = 200
+    sf = 0.5
+    xf = np.linspace(xlo, xhi, Nf)
+    yf = offset_true + amp_true * np.sin(xf) + np.random.normal(scale=sf, size=Nf)
+    # And here are the background objects
+    Nb = 400
+    xb = np.random.uniform(xlo, xhi, size=Nb)
+    yb = np.random.uniform(ylo, yhi, size=Nb)
+    Xi = [np.vstack((xf,yf)).T, np.vstack((xb,yb)).T]
+    X = np.vstack(Xi)
+    sigmas = np.zeros(Nf+Nb) + sf
+    
+    fg_true = Nf / float(Nf + Nb)
 
+    plt.clf()
+    utils.plot_sinusoid_samples([X], xf, np.zeros((0,3)))
+    plt.title('Foreground-background data');
+    plt.axis([xlo,xhi,ylo,yhi])
+    # save for talk slides!
+    plt.savefig('fgbg-0.pdf');
+    
+    plt.clf()
+    #for i,x in enumerate(Xi):
+    #    plt.plot(x[:,0], x[:,1], 'o', color=utils.colors[i], ms=3)
+    utils.plot_sinusoid_samples(Xi, xf, np.zeros((0,3)))
+    plt.title('Foreground-background data');
+    plt.axis([xlo,xhi,ylo,yhi])
+    # save for talk slides!
+    plt.savefig('fgbg-1.pdf');
+
+    # Log posterior probability for our sinusoidal foreground-background model.
+    def sinusoid_logprob(params, X, sigmas, ylo, yhi):
+        # Unpack the parameter vector
+        fg, offset, amp = params
+        # If the foreground amplitude is outside the range [0,1], return
+        if not 0 <= fg <= 1:
+            return -np.inf
+        # Pull out the 'x' and 'y' coordinates of the data
+        x = X[:,0]
+        y = X[:,1]
+        # The foreground likelihood is a Gaussian around the predicted y.
+        ypred = offset + amp * np.sin(x)
+        likelihood = fg * utils.gaussian_probability_1d(y, ypred, sigmas**2)
+        # The background likelihood is just a uniform value.
+        # In order to be normalized, we need the constant value to 
+        # integrate to 1 over the range (yhi-ylo)
+        likelihood += (1 - fg) * 1/(yhi - ylo)
+        # Bad Bayesian!  No cookie!
+        logposterior = np.sum(np.log(likelihood)) + 0.
+        return logposterior
+
+    # If we haven't already...
+    import emcee
+    
+    # Initialization...
+    nwalkers = 50
+    
+    # Foreground weight
+    fg = 0.5
+    # Sinusoidal offset
+    offset = (yhi + ylo) / 2.
+    # Sinusoidal amplitude
+    amp = (yhi - ylo)/4.
+    
+    # Parameter vector
+    p0 = np.array([fg, offset, amp])
+    
+    # Scatter initial walker positions around p0.
+    pp = np.vstack([p0 + np.random.normal(scale=0.1, size=len(p0))
+                    for i in range(nwalkers)])
+    ndim = len(p0)
+    print 'Number of dimensions to sample:', ndim
+    
+    # Now create the emcee Sampler object, giving it our "sinusoid_logprob" function.
+    sampler = emcee.EnsembleSampler(nwalkers, ndim, sinusoid_logprob, args=(X, sigmas, ylo, yhi))
+    
+    # Cavalierly ignore some numerical warnings (overflow/underflow because
+    # we're working in probability rather than log-prob space in gmm_logprob)
+    np.seterr(all='ignore')
+    # During development, you may run this more than once... reset the sampler state.
+    sampler.reset()
+    # Run the sampler!  This will take a few seconds to run.
+    pos,logprob,state = sampler.run_mcmc(pp, 1000)
+    
+    utils.plot_sinusoid_samples(Xi, xf, pos)
+    plt.axis([xlo,xhi,ylo,yhi])
+    plt.title('Sinusoid: final samples');
+    plt.savefig('fgbg-2.pdf')
     
 plt.figure(figsize=(4,3))
 plt.subplots_adjust(left=0.1, right=0.98, bottom=0.1, top=0.95)
@@ -357,7 +452,11 @@ plt.subplots_adjust(left=0.1, right=0.98, bottom=0.1, top=0.95)
 np.random.seed(42)    
 #example1d()
 #example2d()
-example3()
+#example3()
+
+plt.subplots_adjust(left=0.1, right=0.98, bottom=0.1, top=0.9)
+fgbg_example()
+sys.exit(0)
 
 ps = PlotSequence('kmeans', suffix=plotformat)
 np.random.seed(42)    
